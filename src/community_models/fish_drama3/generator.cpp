@@ -1,6 +1,7 @@
 #include "engine/community_models/fish_drama3/generator.h"
 
 #include "engine/framework/debug/profiler.h"
+#include "engine/framework/io/json.h"
 #include "engine/framework/runtime/errors.h"
 #include "engine/framework/runtime/options.h"
 #include "engine/framework/sampling/hf_sampler.h"
@@ -8,7 +9,10 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <cstdlib>
 #include <deque>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <numeric>
 #include <random>
@@ -16,6 +20,25 @@
 
 namespace engine::models::fish_drama3 {
 namespace {
+// Parity hook: FISH_DRAMA3_FORCE=<forced.json> replays a recorded take (prompt rows + frames) instead of
+// sampling, and FISH_DRAMA3_DUMP=<dir> writes every logit the sampler would have seen, plus this
+// implementation's own prompt rows for the same request. Test-only; unset means unchanged behavior.
+std::vector<Drama3Frame> forced_rows(const io::json::Value & value) {
+    std::vector<Drama3Frame> rows;
+    for (const auto & row : value.as_array()) {
+        const auto & cells = row.as_array();
+        if (cells.size() != 11) throw std::runtime_error("FISH_DRAMA3_FORCE rows must have 11 columns");
+        Drama3Frame frame{};
+        for (size_t i = 0; i < 11; ++i) frame[i] = static_cast<int32_t>(cells[i].as_i64());
+        rows.push_back(frame);
+    }
+    return rows;
+}
+
+void write_floats(std::ofstream & out, const std::vector<float> & values) {
+    out.write(reinterpret_cast<const char *>(values.data()), static_cast<std::streamsize>(values.size() * sizeof(float)));
+}
+
 
 int32_t sample(const std::vector<float> & logits, float temperature, int top_k,
                float top_p, std::mt19937 & random) {
@@ -163,9 +186,35 @@ Drama3Generation Drama3Generator::generate(const std::string & text, const std::
         first_audio_phases.emplace_back(name, std::chrono::duration<double, std::milli>(now - profile_marked).count());
         profile_marked = now;
     };
-    const auto prompt = build_drama3_prompt(*assets_, tokenizer_, text, references, history);
-    if (sampling.max_frames > cache_steps_ ||
-        prompt.size() > static_cast<size_t>(cache_steps_ - sampling.max_frames)) {
+    auto prompt = build_drama3_prompt(*assets_, tokenizer_, text, references, history);
+    const char * force_path = std::getenv("FISH_DRAMA3_FORCE");
+    const char * dump_env = std::getenv("FISH_DRAMA3_DUMP");
+    std::vector<Drama3Frame> forced;
+    std::ofstream dump_main, dump_tower;
+    if (force_path != nullptr) {
+        if (dump_env == nullptr) throw std::runtime_error("FISH_DRAMA3_FORCE needs FISH_DRAMA3_DUMP");
+        const std::filesystem::path dump_dir(dump_env);
+        std::filesystem::create_directories(dump_dir);
+        {
+            std::ofstream own(dump_dir / "own_prompt.json");
+            own << "[";
+            for (size_t r = 0; r < prompt.size(); ++r) {
+                own << (r ? ",[" : "[");
+                for (size_t i = 0; i < 11; ++i) own << (i ? "," : "") << prompt[r][i];
+                own << "]";
+            }
+            own << "]";
+        }
+        const auto recorded = io::json::parse_file(force_path);
+        prompt = forced_rows(recorded.require("prompt_rows"));
+        forced = forced_rows(recorded.require("frames"));
+        dump_main.open(dump_dir / "main.f32", std::ios::binary);
+        dump_tower.open(dump_dir / "tower.f32", std::ios::binary);
+    }
+    const bool forcing = force_path != nullptr;
+    const int64_t step_limit = forcing ? static_cast<int64_t>(forced.size()) + 1 : sampling.max_frames;
+    if (step_limit > cache_steps_ ||
+        prompt.size() > static_cast<size_t>(cache_steps_ - step_limit)) {
         throw runtime::CapacityError("Drama 3 prompt plus max_tokens exceeds fish_drama3.context_length; increase it or shorten history");
     }
     auto & decoder = decoder_;
@@ -217,10 +266,14 @@ Drama3Generation Drama3Generator::generate(const std::string & text, const std::
     std::vector<Drama3Frame> output_frames;
     Drama3Generation result;
     if (streaming) codec_->reset_decode_stream();
-    for (int64_t step = 0; step < sampling.max_frames; ++step) {
+    for (int64_t step = 0; step < step_limit; ++step) {
         component_started = ProfileClock::now();
         const auto candidates = backbone_->lm_head(hidden);
         component_ms[4] += debug::elapsed_ms(component_started);
+        if (forcing) {
+            write_floats(dump_main, candidates);
+            if (step == static_cast<int64_t>(forced.size())) break;
+        }
         component_started = ProfileClock::now();
         const int32_t first = sample(candidates, sampling.temperature, sampling.top_k, sampling.top_p, random);
         const int32_t second = sample(candidates, 1.0F, 30, 0.95F, random);
@@ -228,11 +281,12 @@ Drama3Generation Drama3Generator::generate(const std::string & text, const std::
         const bool repeats = first != 0 && std::find(recent.begin(), recent.end(), first_token) != recent.end();
         const int32_t selected = repeats ? second : first;
         component_ms[5] += debug::elapsed_ms(component_started);
-        if (selected == 0) break;
+        if (!forcing && selected == 0) break;
         if (step == 0) mark_phase("semantic_ms");
         Drama3Frame next{};
         next[0] = assets_->tower.semantic_begin + selected - 1;
         next[1] = selected - 1;
+        if (forcing) next = forced[static_cast<size_t>(step)];
         const auto tower_started = ProfileClock::now();
         const auto sampling_before_tower = component_ms[5];
         const auto shared_input = tower_->shared_input({current});
@@ -246,7 +300,8 @@ Drama3Generation Drama3Generator::generate(const std::string & text, const std::
             tower_hidden = tower_output.hidden;
             if (layer >= config.shared_layers) {
                 component_started = ProfileClock::now();
-                next[2 + book] = sample(tower_output.logits, sampling.temperature, sampling.top_k, sampling.top_p, random);
+                if (forcing) write_floats(dump_tower, tower_output.logits);
+                else next[2 + book] = sample(tower_output.logits, sampling.temperature, sampling.top_k, sampling.top_p, random);
                 component_ms[5] += debug::elapsed_ms(component_started);
             }
         }
@@ -272,7 +327,7 @@ Drama3Generation Drama3Generator::generate(const std::string & text, const std::
                 std::cerr << " total_ms=" << std::chrono::duration<double, std::milli>(ProfileClock::now() - profile_start).count() << '\n';
             }
         }
-        if (step + 1 == sampling.max_frames) { result.reached_limit = true; break; }
+        if (!forcing && step + 1 == sampling.max_frames) { result.reached_limit = true; break; }
         current = next;
         component_started = ProfileClock::now();
         auto embedding = backbone_->token_embedding({current[0]});
