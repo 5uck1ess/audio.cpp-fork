@@ -48,5 +48,15 @@ Re-encoding the same wav with the codec on CUDA (no `codec_backend=cpu`, Q2_K, 3
 80.2% of the 324 reference rows match the port on all 10 codebooks (normal numeric drift); the CPU codec's codes
 match 0% and decode to nothing intelligible. So the bug is in the CPU path of reference encoding: it hits
 `fish_drama3.codec_backend=cpu` (the documented memory saver) and, presumably, CPU-backend runs. CUDA-codec
-cloning is unaffected. Decoding on the CPU codec looked fine in the smoke tests (LM takes decoded to intelligible
+cloning: see below. Decoding on the CPU codec looked fine in the smoke tests (LM takes decoded to intelligible
 speech), so encode, not decode, is the likely culprit. Not tested: a CPU-only build, Vulkan, Metal.
+
+## End-to-end cloning, CPU vs CUDA codec (Q2_K, 36 CPU expert layers, seeds 1-3, `--voice-ref` wav only)
+| Codec | seed 1 | seed 2 | seed 3 |
+|---|---:|---:|---:|
+| CUDA (default) | 0.805 | 0.763 | 0.718 |
+| `codec_backend=cpu` | -0.091 | -0.101 | -0.039 |
+
+Clips and argv logs in `ab/q2_*`. Frame-step-only main KL (excluding the final EOS row): Q2_K 0.152, Q2_K at 36
+layers 0.154, Q4_K_S 0.013, Q4 repeat 0.014, Q4 vs repeat 0.0045. The `ab/codes_s*` runs passed only
+`references=` (no `--voice-ref`).
