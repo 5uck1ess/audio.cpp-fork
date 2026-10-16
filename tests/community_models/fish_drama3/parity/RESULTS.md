@@ -1,0 +1,33 @@
+# Drama 3 (fish_drama3) teacher-forced parity, 2026-10-16
+
+Port take: `take-p1/` recorded on Windows/RTX 5090 with `port_dump.py` from the ComfyUI-Drama3 port @ 66c4fb9
+(FP8 experts + bf16, previously matched Fish's fish_omni reference at mean main-token KL 0.0041). Text
+"Open the browser and read my email.", reference chris_hemsworth_15s (wav + transcript), seed 0, 37 frames.
+audio.cpp: upstream main 0fdc5723 + the env-gated hook in generator.cpp, RTX 3090 (Linux, CUDA), Jmica GGUFs
+@ bcb065b8, context 4096, codec on CPU, cpu_expert_layers 12 (Q2_K) / 24 (Q4_K_S). Prompt rows forced from the port.
+
+| Pair | main KL mean | main KL max | top-1 agree | tower KL mean |
+|---|---:|---:|---:|---:|
+| port vs audio.cpp Q2_K | 0.148 | 0.468 | 0.78 | ~0.095 |
+| port vs audio.cpp Q4_K_S | 0.0123 | 0.037 | 0.86 | 0.0054 |
+| port vs audio.cpp Q4_K_S (repeat) | 0.0136 | 0.034 | 0.86 | 0.0058 |
+| audio.cpp Q4_K_S vs its own repeat | 0.0043 | 0.016 | 1.00 | 0.0016 |
+
+P(end of speech) on the last step: port 0.9994, Q2_K 0.9974, Q4_K_S 0.9983. KL is flat across the take.
+Reading: with identical prompt rows the backbone + tower track the port; Q2->Q4 cuts KL 12x, and Q4_K_S sits
+~3x above audio.cpp's own run-to-run noise (0.0043, the same size as the port-vs-reference 0.0041). Consistent
+with quantization; no sign of an implementation bug in generation. Run-to-run output is not bitwise stable.
+
+## Reference encoding mismatch
+audio.cpp's own prompt matches the port's on every text row (97 rows) but on none of the 324 reference-audio rows.
+`codec_check.py` (port codec only): re-encoding the wav with the port's codec on this machine reproduces the
+Windows codes 99.1%. Decoding with the port's codec: port codes -> mel L1 3.2 dB, SNR 6.8 dB, Whisper reads the
+reference transcript; audio.cpp's codes -> mel L1 11.6 dB, SNR -1.3 dB, Whisper reads nothing. No codebook
+permutation, time shift or reversal explains it. audio.cpp's codes are stable across stereo / mean-mono /
+left-channel input. So voice cloning in fish_drama3 conditions the model on reference codes that Fish's codec
+does not decode to the reference. Not yet isolated: encoder graph vs the packaged codec weights (the GGUF folds
+weight normalization), or whether audio.cpp's own decoder reads its codes back.
+
+Scope: a clean comparison shows audio.cpp == Fish's code (via the port), not that the model or Fish's code is
+bug-free. The port's codec was not itself checked against Fish's reference here; it is the codec the port's
+reference-matched generations were produced with.
