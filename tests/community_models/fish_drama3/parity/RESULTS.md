@@ -60,3 +60,6 @@ speech), so encode, not decode, is the likely culprit. Not tested: a CPU-only bu
 Clips and argv logs in `ab/q2_*`. Frame-step-only main KL (excluding the final EOS row): Q2_K 0.152, Q2_K at 36
 layers 0.154, Q4_K_S 0.013, Q4 repeat 0.014, Q4 vs repeat 0.0045. The `ab/codes_s*` runs passed only
 `references=` (no `--voice-ref`).
+
+## After the fix (de4f4c97, #936)
+CPU codec, Q2_K, 36 CPU expert layers: reference rows match the port 82.7% on all 10 books (per book 0.988-0.895, same as CUDA). Cloning SIM seeds 1-3: 0.686 / 0.771 / 0.756 (was -0.09 / -0.10 / -0.04). Fixed.
