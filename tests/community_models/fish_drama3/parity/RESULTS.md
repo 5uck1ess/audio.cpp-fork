@@ -41,8 +41,12 @@ Speaker similarity to the reference (seed-tts-eval WavLM-large SV, tts-bench `sc
 | `--voice-ref` wav (audio.cpp encodes it) | -0.149 | -0.137 | -0.087 |
 | `references=[{text, vq_codes}]` with the port's codes | 0.655 | 0.730 | 0.763 |
 
-All six transcribe correctly (Whisper base). Cloning from a wav in fish_drama3 produces a different speaker; the
-same model cloning from Fish-space codes matches the reference. The fault is in audio.cpp's reference encoding.
-Inference, not tested: the decoder reads Fish-space codes correctly (LM-generated takes decode to intelligible
-speech with audio.cpp's own decoder), so the encode path (encoder network, quantizer encode, or folded encoder
-weights) is the likely place.
+All six transcribe correctly (Whisper base). All runs above used `fish_drama3.codec_backend=cpu`.
+
+## Narrowed: only the CPU codec encodes wrong
+Re-encoding the same wav with the codec on CUDA (no `codec_backend=cpu`, Q2_K, 36 CPU expert layers to fit):
+80.2% of the 324 reference rows match the port on all 10 codebooks (normal numeric drift); the CPU codec's codes
+match 0% and decode to nothing intelligible. So the bug is in the CPU path of reference encoding: it hits
+`fish_drama3.codec_backend=cpu` (the documented memory saver) and, presumably, CPU-backend runs. CUDA-codec
+cloning is unaffected. Decoding on the CPU codec looked fine in the smoke tests (LM takes decoded to intelligible
+speech), so encode, not decode, is the likely culprit. Not tested: a CPU-only build, Vulkan, Metal.
