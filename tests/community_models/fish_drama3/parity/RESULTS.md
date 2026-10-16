@@ -63,3 +63,13 @@ layers 0.154, Q4_K_S 0.013, Q4 repeat 0.014, Q4 vs repeat 0.0045. The `ab/codes_
 
 ## After the fix (de4f4c97, #936)
 CPU codec, Q2_K, 36 CPU expert layers: reference rows match the port 82.7% on all 10 books (per book 0.988-0.895, same as CUDA). Cloning SIM seeds 1-3: 0.686 / 0.771 / 0.756 (was -0.09 / -0.10 / -0.04). Fixed.
+
+## Codec parity: drift or bug? (`encode_fp32.py`, `margins.py`)
+Port codec in strict FP32 (TF32 off) gives identical codes on CPU and CUDA. Against it, all-10-book frame match:
+the port at its default ComfyUI precision 0.710, audio.cpp CPU (fixed) 0.676, audio.cpp CUDA 0.676. Scoring only
+frames whose earlier books agree (same residual input), each book differs on 2-6% of frames, and audio.cpp's pick
+is the strict port's 2nd-ranked entry (median; max rank 6) with a median cosine margin of 7e-4 to 6e-3, against a
+typical top1-top2 gap of 1.5e-2 to 3.6e-2. The port's own default-precision run shows the same profile, including
+the same few larger-margin outliers (up to 0.1-0.13 on book 1, 0.054 on books 5-6). The codebooks are 8-dim cosine
+argmax, so near-ties are common, and the residual chain spreads a single flip to the later books. Reading: what
+remains looks like numerical drift, not a framework bug. Not checked: pre-quantization latents from audio.cpp.
