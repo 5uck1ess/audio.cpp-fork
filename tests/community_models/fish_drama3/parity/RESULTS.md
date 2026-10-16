@@ -31,3 +31,18 @@ weight normalization), or whether audio.cpp's own decoder reads its codes back.
 Scope: a clean comparison shows audio.cpp == Fish's code (via the port), not that the model or Fish's code is
 bug-free. The port's codec was not itself checked against Fish's reference here; it is the codec the port's
 reference-matched generations were produced with.
+
+## Cloning A/B (Q4_K_S, same text, seeds 1-3)
+"I never said she stole the money. Honestly, I just wanted to know where it went, and why nobody told me."
+Speaker similarity to the reference (seed-tts-eval WavLM-large SV, tts-bench `scoring/sim.py`):
+
+| Reference given as | seed 1 | seed 2 | seed 3 |
+|---|---:|---:|---:|
+| `--voice-ref` wav (audio.cpp encodes it) | -0.149 | -0.137 | -0.087 |
+| `references=[{text, vq_codes}]` with the port's codes | 0.655 | 0.730 | 0.763 |
+
+All six transcribe correctly (Whisper base). Cloning from a wav in fish_drama3 produces a different speaker; the
+same model cloning from Fish-space codes matches the reference. The fault is in audio.cpp's reference encoding.
+Inference, not tested: the decoder reads Fish-space codes correctly (LM-generated takes decode to intelligible
+speech with audio.cpp's own decoder), so the encode path (encoder network, quantizer encode, or folded encoder
+weights) is the likely place.
