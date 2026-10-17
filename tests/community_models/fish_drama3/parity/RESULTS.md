@@ -73,3 +73,17 @@ typical top1-top2 gap of 1.5e-2 to 3.6e-2. The port's own default-precision run 
 the same few larger-margin outliers (up to 0.1-0.13 on book 1, 0.054 on books 5-6). The codebooks are 8-dim cosine
 argmax, so near-ties are common, and the residual chain spreads a single flip to the later books. Reading: what
 remains looks like numerical drift, not a framework bug. Not checked: pre-quantization latents from audio.cpp.
+
+## PR #937 (BF16 CUDA reference encoder, 5ea78d0d) regression check
+Q2_K, 36 CPU expert layers, same cloning text, seeds 1-3, WavLM SIM:
+
+| Encoder | seed 1 | seed 2 | seed 3 |
+|---|---:|---:|---:|
+| CUDA, `codec_encoder_bf16_compute` on (new default) | 0.692 | 0.678 | 0.745 |
+| CUDA, bf16 off | 0.479 | 0.622 | 0.715 |
+| CPU codec | 0.805 | 0.655 | 0.748 |
+
+bf16-off codes equal pre-#937 CUDA codes exactly; the CPU codec still matches the port (82.7%), so #936 survives.
+bf16-on codes share only 6% of frames with the FP32 port references, which is expected (the PR targets Fish's BF16
+Python codec). All three keep the speaker. Seed spread (bf16-off s1 0.48 here vs 0.81 pre-#937 with identical codes)
+shows that generation differs from run to run; three seeds cannot rank the encoders.
