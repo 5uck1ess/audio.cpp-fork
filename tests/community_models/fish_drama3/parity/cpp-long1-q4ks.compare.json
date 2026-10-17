@@ -1,0 +1,111 @@
+{
+  "steps": 2830,
+  "prompt": {
+    "identical": false,
+    "own_rows": 935,
+    "port_rows": 935,
+    "first_diff_row": 82,
+    "differing_rows": 56,
+    "text_rows_differing": 0,
+    "own_row": [
+      249071,
+      972,
+      248,
+      165,
+      292,
+      564,
+      29,
+      257,
+      149,
+      812,
+      62
+    ],
+    "port_row": [
+      249071,
+      972,
+      248,
+      165,
+      292,
+      564,
+      29,
+      257,
+      149,
+      812,
+      791
+    ]
+  },
+  "port_vs_cpp": {
+    "pair": "port||cpp",
+    "main_kl_mean": 0.01011611222568633,
+    "main_kl_max": 0.11637023299890445,
+    "main_kl_argmax_step": 870,
+    "main_kl_first_half": 0.010570895181467426,
+    "main_kl_second_half": 0.009661650444309033,
+    "main_kl_frames_only": 0.010108649871764764,
+    "main_kl_eos_step": 0.031234573823724514,
+    "main_kl_by_time_bin": [
+      0.01187,
+      0.01024,
+      0.0102,
+      0.00996,
+      0.00989,
+      0.00997,
+      0.00912,
+      0.00961
+    ],
+    "main_top1_agreement": 0.901060070671378,
+    "forced_logprob_mean_a": -2.5900548264212437,
+    "forced_logprob_mean_b": -2.599749614709597,
+    "p_eos_last_a": 0.525611375840193,
+    "p_eos_last_b": 0.6431588524888312,
+    "tower_kl_mean_per_book": [
+      0.00649,
+      0.00629,
+      0.00598,
+      0.00527,
+      0.0053,
+      0.0053,
+      0.00668,
+      0.00653,
+      0.00604
+    ],
+    "tower_kl_max": 0.054108164664153434
+  },
+  "port_vs_port": {
+    "pair": "port||port (control, expect 0)",
+    "main_kl_mean": 0.0,
+    "main_kl_max": 0.0,
+    "main_kl_argmax_step": 0,
+    "main_kl_first_half": 0.0,
+    "main_kl_second_half": 0.0,
+    "main_kl_frames_only": 0.0,
+    "main_kl_eos_step": 0.0,
+    "main_kl_by_time_bin": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "main_top1_agreement": 1.0,
+    "forced_logprob_mean_a": -2.5900548264212437,
+    "forced_logprob_mean_b": -2.5900548264212437,
+    "p_eos_last_a": 0.525611375840193,
+    "p_eos_last_b": 0.525611375840193,
+    "tower_kl_mean_per_book": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "tower_kl_max": 0.0
+  }
+}

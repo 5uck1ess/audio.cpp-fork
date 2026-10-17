@@ -87,3 +87,16 @@ bf16-off codes equal pre-#937 CUDA codes exactly; the CPU codec still matches th
 bf16-on codes share only 6% of frames with the FP32 port references, which is expected (the PR targets Fish's BF16
 Python codec). All three keep the speaker. Seed spread (bf16-off s1 0.48 here vs 0.81 pre-#937 with identical codes)
 shows that generation differs from run to run; three seeds cannot rank the encoders.
+
+## Long take, single pass (take-long1: passage 1, 2830 frames, top_k 4097, Windows port)
+audio.cpp Q4_K_S forced along it: main-token KL 0.0101 over frame steps, flat by time bin
+(0.0119, 0.0102, 0.0102, 0.0100, 0.0099, 0.0100, 0.0091, 0.0096), top-1 agreement 0.90, tower KL ~0.006.
+No long-context drift. Chunking was off (`text_chunk_size=100000`), so this says nothing about chunked pacing.
+
+## Chunked long-form pacing (#920): two causes
+Dialogue passage from #920's drama_stress.py, Q4_K_S, default 200-char chunks, scored by `pacing_score.py`.
+1. Tag-aware chunker split `."` between `.` and `"`: chunks opened with a stray closing quote (8 of 14 chunks
+   in this passage). Fixed in branch `chunk-closing-quotes` (framework). See chunker_probe/ for before/after chunks.
+2. `top_k=30` stalls: 7 of 11 takes had 9-21 s of silence inside the take, WER up to 0.31. With top_k=4097
+   (Fish's Space setting): 0 of 11, longest silence 4 s, WER 0.02-0.07. Branch `drama3-topk-uncapped`.
+Chunk joins themselves add ~0.1 s (`chunk_pauses.py`, needs FISH_DRAMA3_CHUNK_LOG debug print, not upstream).
