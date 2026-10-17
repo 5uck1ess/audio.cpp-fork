@@ -52,6 +52,8 @@ def prompt_report(own, forced):
 def compare(name, a_main, a_tower, b_main, b_tower, forced_main):
     steps = len(forced_main)
     k = kl(a_main, b_main)
+    frames_k = k[:steps]
+    bins = np.array_split(frames_k, min(8, steps))
     agree = (a_main[:steps].argmax(-1) == b_main[:steps].argmax(-1)).mean()
     lp_a, lp_b = log_softmax(a_main.astype(np.float64)), log_softmax(b_main.astype(np.float64))
     idx = np.arange(steps)
@@ -60,6 +62,8 @@ def compare(name, a_main, a_tower, b_main, b_tower, forced_main):
         "pair": name,
         "main_kl_mean": float(k.mean()), "main_kl_max": float(k.max()), "main_kl_argmax_step": int(k.argmax()),
         "main_kl_first_half": float(k[: len(k) // 2].mean()), "main_kl_second_half": float(k[len(k) // 2:].mean()),
+        "main_kl_frames_only": float(frames_k.mean()), "main_kl_eos_step": float(k[-1]),
+        "main_kl_by_time_bin": [round(float(b.mean()), 5) for b in bins],
         "main_top1_agreement": float(agree),
         "forced_logprob_mean_a": float(lp_a[idx, forced_main].mean()),
         "forced_logprob_mean_b": float(lp_b[idx, forced_main].mean()),
@@ -77,20 +81,24 @@ args = p.parse_args()
 
 forced = json.loads((args.take / "forced.json").read_text(encoding="utf-8"))
 port = np.load(args.take / "port_logits.npz")
-port_main, port_tower = port["main"], port["tower"]
+port_main, port_tower = port["main"], port["tower"].astype(np.float32)
 frames = np.array(forced["frames"])
-steps, books, vocab = port_tower.shape
-if len(frames) != steps or len(port_main) != steps + 1:
+steps = len(frames)
+tower_steps = port["tower_steps"] if "tower_steps" in port.files else np.arange(steps)
+_, books, vocab = port_tower.shape
+if len(port_main) != steps + 1 or len(tower_steps) != len(port_tower):
     raise SystemExit("port dump is inconsistent with forced.json")
 forced_main = frames[:, 1] + 1  # candidate index: 0 = end of speech, 1 + c = semantic code c
 
 out = {"steps": steps, "prompt": prompt_report(json.loads((args.cpp / "own_prompt.json").read_text()),
                                                 forced["prompt_rows"])}
 cpp_main, cpp_tower = load_cpp(args.cpp, steps, books, vocab)
+cpp_tower = cpp_tower[tower_steps]
 out["port_vs_cpp"] = compare("port||cpp", port_main, port_tower, cpp_main, cpp_tower, forced_main)
 out["port_vs_port"] = compare("port||port (control, expect 0)", port_main, port_tower, port_main, port_tower, forced_main)
 if args.cpp_b:
     b_main, b_tower = load_cpp(args.cpp_b, steps, books, vocab)
+    b_tower = b_tower[tower_steps]
     out["port_vs_cpp_b"] = compare("port||cpp_b", port_main, port_tower, b_main, b_tower, forced_main)
     out["cpp_vs_cpp_b"] = compare("cpp||cpp_b", cpp_main, cpp_tower, b_main, b_tower, forced_main)
 print(json.dumps(out, indent=2))
