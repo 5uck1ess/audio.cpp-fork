@@ -100,3 +100,5 @@ Dialogue passage from #920's drama_stress.py, Q4_K_S, default 200-char chunks, s
 2. `top_k=30` stalls: 7 of 11 takes had 9-21 s of silence inside the take, WER up to 0.31. With top_k=4097
    (Fish's Space setting): 0 of 11, longest silence 4 s, WER 0.02-0.07. Branch `drama3-topk-uncapped`.
 Chunk joins themselves add ~0.1 s (`chunk_pauses.py`, needs FISH_DRAMA3_CHUNK_LOG debug print, not upstream).
+Rerun on PR 2 rebased onto ace630de (includes #955) + chunker fix, seeds 0-3: top_k=30 stalls 3 of 4
+(11.0-16.6 s), default 4097 0 of 4 (longest 2.6 s). Scores in pacing/rebased_scores.jsonl, fixed_seeds_scores.jsonl.
